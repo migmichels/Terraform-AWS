@@ -5,7 +5,7 @@ provider "aws" {
 }
 
 # 1. Create vpc
-resource "aws_vpc" "main" {
+resource "aws_vpc" "prod-vpc" {
   cidr_block = "10.0.0.0/16"
   tags = {
     Name = "production"
@@ -22,13 +22,13 @@ resource "aws_route_table" "prod-route-table" {
   vpc_id = aws_vpc.prod-vpc.id
 
   route {
-    cidr_block = "10.0.1.0/24"
+    cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.gw.id
   }
 
   route {
     ipv6_cidr_block = "::/0"
-    egress_only_gateway_id = aws_internet_gateway.gw.id
+    gateway_id      = aws_internet_gateway.gw.id
   }
 
   tags = {
@@ -59,44 +59,44 @@ resource "aws_security_group" "allow_web" {
   description = "Allow Web inbound traffic"
   vpc_id      = aws_vpc.prod-vpc.id
 
-  ingress = [
-    {
+  ingress {
       description      = "HTTPS"
       from_port        = 443
       to_port          = 443
       protocol         = "tcp"
       cidr_blocks      = ["0.0.0.0/0"]
-    }
-  ]
+  }
 
-  ingress = [
-    {
+  ingress {
+      description      = "HTTPS"
+      from_port        = 8080
+      to_port          = 8080
+      protocol         = "tcp"
+      cidr_blocks      = ["0.0.0.0/0"]
+  }
+
+  ingress {
       description      = "HTTP"
       from_port        = 80
       to_port          = 80
       protocol         = "tcp"
       cidr_blocks      = ["0.0.0.0/0"]
-    }
-  ]
+  }
 
-  ingress = [
-    {
+  ingress {
       description      = "SSH"
-      from_port        = 2
-      to_port          = 2
+      from_port        = 22
+      to_port          = 22
       protocol         = "tcp"
       cidr_blocks      = ["0.0.0.0/0"]
-    }
-  ]
+  }
 
-  egress = [
-    {
+  egress {
       from_port        = 0
       to_port          = 0
       protocol         = "-1"
       cidr_blocks      = ["0.0.0.0/0"]
-    }
-  ]
+  }
 
   tags = {
     Name = "allow_web"
@@ -111,11 +111,16 @@ resource "aws_network_interface" "web-server-nic" {
 }
 
 # 8. Assign an elastic IP to the network interface created in step 7
+
 resource "aws_eip" "one" {
   vpc                       = true
   network_interface         = aws_network_interface.web-server-nic.id
   associate_with_private_ip = "10.0.1.50"
-  depends_on = aws_internet_gateway.gw
+  depends_on                = [aws_internet_gateway.gw]
+}
+
+output "server_public_ip" {
+  value = aws_eip.one.public_ip
 }
 
 # 9. Create Ubuntu server and install/enable apache2
@@ -132,10 +137,10 @@ resource "aws_instance" "web-server-instance" {
 
   user_data = <<-EOF
               #!/bin/bash
-              sudo apt update -y
-              sudo apt install apache2 -y
-              sudo systemctl start apache2
-              sudo bash -c 'echo your very first web server > /var/www/html/index.html'
+              sudo yum update -y
+              sudo yum install -y httpd
+              sudo systemctl start httpd
+              sudo bash -c 'echo hello world!' > /var/www/html/index.html
               EOF
   tags = {
     Name = "web-server"
